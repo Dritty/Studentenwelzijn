@@ -23,7 +23,11 @@ Netwerkpad <- "//groepdir.ad.hva.nl/group_mdw_001/BS/IR/Algemeen/22 Studentenpan
 
 Studentenwelzijn <- haven:: read_sav(paste0(Netwerkpad,"Studentenwelzijn.sav"))
 
+Studentenwelzijn_foreign <- foreign::read.spss(paste0(Netwerkpad,"Studentenwelzijn.sav"),
+                                               to.data.frame = TRUE)
+
 labels <- setNames(stack(lapply(Studentenwelzijn, label))[2:1], c("Varcode", "Variables"))
+
 
 ## Vul onbekende labels op met de varcode
 labels <- labels %>% 
@@ -36,11 +40,11 @@ labels <- labels %>%
 
 ## Recoden van vooropleiding, geslacht, SKC en faculteit
 Studentenwelzijn <- Studentenwelzijn %>% 
-  mutate(HP_FAC = case_when(HP_FAC == 1 ~ "FBE--Business en Economie",
-                            HP_FAC== 2 ~ "FBSV--Bewegen Sport en Voeding",
-                            HP_FAC == 3 ~ "FDMCI--Dig Media & Creat Indus",
-                            HP_FAC == 4 ~ "FG--Gezondheid",
-                            HP_FAC == 5 ~ "FMR--Maatschappij en Recht",
+  mutate(HP_FAC = case_when(HP_FAC == 2 ~ "FBE--Business en Economie",
+                            HP_FAC == 1 ~ "FBSV--Bewegen Sport en Voeding",
+                            HP_FAC == 5 ~ "FDMCI--Dig Media & Creat Indus",
+                            HP_FAC == 3 ~ "FG--Gezondheid",
+                            HP_FAC == 4 ~ "FMR--Maatschappij en Recht",
                             HP_FAC == 6 ~ "FOO--Onderwijs en Opvoeding",
                             HP_FAC == 7 ~ "FT--Techniek"),
          HP_GESLACHT = if_else(HP_GESLACHT == 1, "Man", "Vrouw"))
@@ -74,6 +78,63 @@ Respons_geslacht <- Studentenwelzijn %>%
 Overzichten <- Studentenwelzijn %>% 
   describeBy(group= Studentenwelzijn$HP_FAC)
 
-prop.table(table(Studentenwelzijn$Q4_Q8_1, Studentenwelzijn$HP_FAC), 2)
+Overzichten <- map(Overzichten, as.data.frame)
 
-table(Studentenwelzijn$Q4_Q8_1, Studentenwelzijn$HP_FAC)
+Overzichten_faculteiten <- Overzichten %>% 
+  map_df(tibble::rownames_to_column, 'rowname', .id = 'name')
+
+## Bereken gewogen gemiddelde
+test <- Studentenwelzijn %>% 
+  group_by(HP_FAC) %>% 
+  summarise(gemiddelde = weighted.mean(Q1, weight, na.rm = TRUE))
+
+
+# install.packages("GDAtools")
+library(GDAtools)
+
+
+## V1 (cijfer) per faculteit
+prop.wtable(Studentenwelzijn$Q1,Studentenwelzijn$HP_FAC,w=Studentenwelzijn$weight,
+            dir = 2, na=FALSE, digits = 0)
+
+prop.table(table(Studentenwelzijn$Q1, Studentenwelzijn$HP_FAC), 2)
+
+
+test <- as_tibble(prop.wtable(Studentenwelzijn$Q1,Studentenwelzijn$HP_FAC,w=Studentenwelzijn$weight,
+                              dir = 2, na=FALSE, digits = 0))
+
+
+test <- as_tibble(prop.wtable(Studentenwelzijn$HP_GESLACHT,Studentenwelzijn$HP_FAC,w=Studentenwelzijn$weight,
+                              dir = 2, na=FALSE, digits = 0))
+
+
+## Maak een overzicht van de gewogen gekozen antwoorden van vraag Q3_1 in percentages per faculteit
+Q3_1 <- as_tibble(prop.wtable(Studentenwelzijn_foreign$Q3_1,Studentenwelzijn_foreign$HP_FAC,w=Studentenwelzijn_foreign$weight,
+                              dir = 2, na=FALSE, digits = 0), rownames = "Antwoorden") %>% 
+  rename("HvA" = tot) %>% 
+  mutate_at(vars(`Faculteit Bewegen, Sport en Voeding`: `HvA`), paste0, "%")
+
+
+## Functie om gewogen gemiddelde en SD per groep te berekenen
+
+wtd_mean_sd <- function(df, variabele, group, weight){
+  
+  group <- enquo(group)
+  variabele <- enquo(variabele)
+  weight <- enquo(weight)
+  
+  df <- df %>% 
+    group_by(!!group) %>% 
+    summarise(Gemiddelde = Hmisc:: wtd.mean(x= !!variabele, weights=!!weight, na.rm = TRUE),
+              SD = sqrt(Hmisc::wtd.var(x= !!variabele, weights=!!weight, na.rm = TRUE)))
+  
+  df
+  
+}
+
+
+## Gemiddelde en SD per faculteit
+Gemiddelde_Q1 <- wtd_mean_sd(Studentenwelzijn, Q1, HP_FAC, weight)
+
+## TODO: Bekijken: https://cran.r-project.org/web/packages/compareGroups/vignettes/compareGroups_vignette.html
+
