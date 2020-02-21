@@ -1,31 +1,25 @@
-###########################################################################
+## ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 ##
 ## Onderwerp: Studentenpanel Studentenwelzijn 2019-2020
 ## Doel: Inlezen en verkennen van data
 ##
 ##
-############################################################################
-
 ## ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-### VOORBEREIDINGEN ####
-library(tidyverse)
-library(tidyr)
-library(haven)
-library(Hmisc)
-library(janitor)
-library(psych)
 
-## Bepaal netwerklocatie (zodat niet elke keer hele pad moet worden getypt)
-Netwerkpad <- "//groepdir.ad.hva.nl/group_mdw_001/BS/IR/Algemeen/22 Studentenpanel/Panelonderzoeken/Studiejaar 2019-2020/Studentenwelzijn/Data/"
+source("C:/Github/Studentenwelzijn/Voorbereidingen.R")
 
 ## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++##
 ## INLEZEN #####
 
 Studentenwelzijn <- haven:: read_sav(paste0(Netwerkpad,"Studentenwelzijn.sav"))
 
+## Lees bestand op een manier in waarin labels in cellen staan
 Studentenwelzijn_foreign <- foreign::read.spss(paste0(Netwerkpad,"Studentenwelzijn.sav"),
                                                to.data.frame = TRUE)
 
+## Maak legenda:
+
+## Haal kolomlabels uit SPSS file en zet in een tabel
 labels <- setNames(stack(lapply(Studentenwelzijn, label))[2:1], c("Varcode", "Variables"))
 
 
@@ -53,13 +47,18 @@ Studentenwelzijn <- Studentenwelzijn %>%
 Studentenwelzijn2 <- as_tibble(Studentenwelzijn)
 colnames(Studentenwelzijn2) <- labels$Variables
 
+## +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++##
+## VERKENNEN #####
+
 ## Responsoverzichten
 Respons_faculteit <- Studentenwelzijn %>% 
   group_by(HP_FAC) %>% 
   summarise(Aantal=n())%>% 
   mutate(Percentage = paste0(round(Aantal/sum(Aantal)*100, digits = 0), "%"))%>% 
-  adorn_totals("row", fill = "100%", name = "Totaal")
+  adorn_totals("row", fill = "100%", name = "Totaal") %>% 
+  arrange(Aantal)
 
+write.csv2(Respons_faculteit, "C:/temp/responsoverzicht.csv", row.names = FALSE)
 
 Respons_studiejaar <- Studentenwelzijn %>% 
   group_by(as.character(HP_JAAR)) %>% 
@@ -89,10 +88,6 @@ test <- Studentenwelzijn %>%
   summarise(gemiddelde = weighted.mean(Q1, weight, na.rm = TRUE))
 
 
-# install.packages("GDAtools")
-library(GDAtools)
-
-
 ## V1 (cijfer) per faculteit
 prop.wtable(Studentenwelzijn$Q1,Studentenwelzijn$HP_FAC,w=Studentenwelzijn$weight,
             dir = 2, na=FALSE, digits = 0)
@@ -115,26 +110,31 @@ Q3_1 <- as_tibble(prop.wtable(Studentenwelzijn_foreign$Q3_1,Studentenwelzijn_for
   mutate_at(vars(`Faculteit Bewegen, Sport en Voeding`: `HvA`), paste0, "%")
 
 
-## Functie om gewogen gemiddelde en SD per groep te berekenen
-
-wtd_mean_sd <- function(df, variabele, group, weight){
-  
-  group <- enquo(group)
-  variabele <- enquo(variabele)
-  weight <- enquo(weight)
-  
-  df <- df %>% 
-    group_by(!!group) %>% 
-    summarise(Gemiddelde = Hmisc:: wtd.mean(x= !!variabele, weights=!!weight, na.rm = TRUE),
-              SD = sqrt(Hmisc::wtd.var(x= !!variabele, weights=!!weight, na.rm = TRUE)))
-  
-  df
-  
-}
-
 
 ## Gemiddelde en SD per faculteit
 Gemiddelde_Q1 <- wtd_mean_sd(Studentenwelzijn, Q1, HP_FAC, weight)
 
-## TODO: Bekijken: https://cran.r-project.org/web/packages/compareGroups/vignettes/compareGroups_vignette.html
 
+## Histrogram per faculteit met gewogen gemiddelde
+df_mean <- Studentenwelzijn %>% 
+  group_by(HP_FAC) %>% 
+  summarise(mean = weighted.mean(Q1, weight, na.rm = TRUE))
+
+ggplot(Studentenwelzijn, aes(Q1))+geom_histogram(position = "dodge",
+                                                                binwidth = 1)+
+  facet_grid(.~HP_FAC)+
+  geom_vline(data = df_mean, aes(xintercept = mean),
+            colour = "red")+
+  geom_text(y=Inf, aes(x=mean, label=round(mean, digits = 1)),
+            data=df_mean, vjust = 2)+
+  scale_x_continuous(breaks=seq(0,10,1))+
+  theme_classic()
+
+ggplot(Studentenwelzijn, aes(Q1))+geom_histogram(position = "dodge",
+                                                 binwidth = 1)+
+  # geom_vline(data = df_mean, aes(xintercept = mean),
+  #            colour = "red")+
+  # geom_text(y=Inf, aes(x=mean, label=round(mean, digits = 1)),
+  #           data=df_mean, vjust = 2)+
+  scale_x_continuous(breaks=seq(0,10,1))+
+  theme_classic()
